@@ -1,17 +1,32 @@
 import json
 import os
+import time
+from collections import defaultdict, deque
 from typing import Optional
 from dotenv import load_dotenv
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from google import genai
 from google.genai import types
-from sqlmodel import SQLModel, Session, create_engine, select
+from sqlmodel import SQLModel, Field, Session, create_engine, select
 from models import Location, Dish
 from utils import meters_between
 
 load_dotenv()
 engine = create_engine("sqlite:///app.db")
 router = APIRouter()
+
+# Simple in-memory rate limit: 30 requests per minute per caller.
+_hits = defaultdict(deque)
+
+def check_rate_limit(request: Request, limit: int = 30, window: int = 60):
+    ip = request.client.host if request.client else "unknown"
+    now_ = time.time()
+    q = _hits[ip]
+    while q and now_ - q[0] > window:
+        q.popleft()
+    if len(q) >= limit:
+        raise HTTPException(429, "Too many requests, please slow down")
+    q.append(now_)
 
 SYSTEM = (
     "You help college students decide where to go next on a food and drink "
@@ -25,7 +40,7 @@ class RecommendRequest(SQLModel):
     lat: float
     lng: float
     minutes: Optional[int] = None
-    note: Optional[str] = None        # e.g. "something sweet, not too bitter"
+    note: Optional[str] = Field(default=None, max_length=300)  # e.g. "something sweet, not too bitter"
 
 class Pick(SQLModel):
     location_id: int
@@ -36,12 +51,44 @@ class Recommendation(SQLModel):
     backups: list[Pick]
     quest_blurb: str
 
+def is_temporary(error: Exception) -> bool:
+    text = str(error)
+    return any(code in text for code in ("503", "429", "UNAVAILABLE", "RESOURCE_EXHAUSTED"))
+
+def call_gemini(client, prompt: str, models: list[str]) -> Recommendation:
+    """Try each model in order. Retry briefly when Google reports a temporary problem."""
+    last_error = None
+    for model in models:
+        for attempt in range(2):
+            try:
+                resp = client.models.generate_content(
+                    model=model,
+                    contents=prompt,
+                    config=types.GenerateContentConfig(
+                        system_instruction=SYSTEM,
+                        response_mime_type="application/json",
+                        response_schema=Recommendation,
+                    ),
+                )
+                return Recommendation.model_validate_json(resp.text)
+            except Exception as e:
+                last_error = e
+                if is_temporary(e) and attempt == 0:
+                    time.sleep(2)      # wait, then retry the same model once
+                    continue
+                break                  # otherwise move on to the next model
+    raise last_error
+
 @router.post("/recommend", response_model=Recommendation)
-def recommend(req: RecommendRequest):
+def recommend(req: RecommendRequest, request: Request):
+    check_rate_limit(request)
+
     key = os.getenv("GEMINI_API_KEY")
-    model = os.getenv("GEMINI_MODEL")
-    if not key or not model:
+    primary = os.getenv("GEMINI_MODEL")
+    fallback = os.getenv("GEMINI_FALLBACK_MODEL")
+    if not key or not primary:
         raise HTTPException(500, "GEMINI_API_KEY or GEMINI_MODEL is not set")
+    models = [primary] + ([fallback] if fallback and fallback != primary else [])
 
     with Session(engine) as s:
         places = s.exec(
@@ -70,16 +117,7 @@ def recommend(req: RecommendRequest):
 
     try:
         client = genai.Client(api_key=key)
-        resp = client.models.generate_content(
-            model=model,
-            contents=prompt,
-            config=types.GenerateContentConfig(
-                system_instruction=SYSTEM,
-                response_mime_type="application/json",
-                response_schema=Recommendation,
-            ),
-        )
-        result = Recommendation.model_validate_json(resp.text)
+        result = call_gemini(client, prompt, models)
     except Exception as e:
         raise HTTPException(502, f"Gemini request failed: {e}")
 
