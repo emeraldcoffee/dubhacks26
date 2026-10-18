@@ -1,6 +1,9 @@
 import json
 import time
 import os
+import re
+import logging
+
 from typing import Optional, Any
 from pydantic import model_validator
 from dotenv import load_dotenv
@@ -14,6 +17,41 @@ from utils import meters_between
 load_dotenv()
 engine = create_engine("sqlite:///app.db")
 router = APIRouter()
+
+log = logging.getLogger("discover")
+
+SELF_HARM = re.compile(
+    r"\b(kill myself|suicide|end my life|harm myself|hurt myself|self[- ]harm|want to die)\b", re.I)
+INJECTION = re.compile(
+    r"(ignore (all |your )?(previous |prior )?(instructions|rules)|system prompt|"
+    r"developer mode|api key|password|token|dump .{0,30}data)", re.I)
+
+CRISIS_MSG = (
+    "I'm really sorry you're going through this, and I can't help with that here. "
+    "You don't have to handle it alone. In the US you can call or text 988 "
+    "(Suicide & Crisis Lifeline) at any time, or call 911 if you're in immediate "
+    "danger. If you're elsewhere, local emergency services or a local crisis line can help."
+)
+SCOPE_MSG = ("I can only suggest food and drink places, for example "
+             "'cozy matcha cafes in the U District'. I can't help with that request.")
+
+def guard(idea: str):
+    if SELF_HARM.search(idea):
+        return CRISIS_MSG
+    if INJECTION.search(idea):
+        return SCOPE_MSG
+    return None
+
+SECRET_PATTERN = re.compile(r"(AIza[0-9A-Za-z_\-]{20,}|sk-[A-Za-z0-9]{20,}|-----BEGIN [A-Z ]*KEY-----)")
+
+def looks_secret(text: str) -> bool:
+    return bool(SECRET_PATTERN.search(text))
+
+def valid_place(name: str, addr: str) -> bool:
+    return (2 <= len(name) <= 100 and len(addr) <= 200
+            and bool(re.search(r"\d", addr))          # street addresses contain a number
+            and not INJECTION.search(name + " " + addr)
+            and not looks_secret(name + addr))
 
 SYSTEM = (
     "You are a local guide helping college students decide where to go next "
@@ -106,6 +144,9 @@ def discover(req: DiscoverRequest):
     if not req.idea:
         raise HTTPException(422, "Missing idea")
     idea = req.idea.strip()
+    blocked = guard(idea)
+    if blocked:
+        return Suggestions(places=[], output=blocked)
     if not 3 <= len(idea) <= 200:
         raise HTTPException(422, "Idea must be 3 to 200 characters")
     count = max(1, min(req.count, 10))
@@ -120,8 +161,8 @@ def discover(req: DiscoverRequest):
         client = genai.Client(api_key=key)
         result = call_gemini(client, prompt, models)
     except Exception as e:
-        if is_temporary(e):
-            raise HTTPException(502, f"Gemini request failed: {e}")
+        log.exception("Gemini request failed")     # full detail goes to Render's logs only
+        raise HTTPException(502, "Upstream AI service error, try again later")
         result = Suggestions(places=[])   # blocked, empty or unparseable reply: treat as no results
 
     seen, clean = set(), []
@@ -133,9 +174,9 @@ def discover(req: DiscoverRequest):
             clean.append(PlaceSuggestion(name=name, address=addr))
 
     out = Suggestions(
-    places=clean[:count],
-    output="\n".join(f"{p.name} - {p.address}" for p in clean[:count])
-           or "No matching food or drink places found.",
+        places=clean[:count],
+        output="\n".join(f"{p.name} - {p.address}" for p in clean[:count]) or SCOPE_MSG,
     )
+
     _cache[cache_key] = out
     return out
