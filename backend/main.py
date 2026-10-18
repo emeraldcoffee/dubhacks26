@@ -109,3 +109,7 @@ def quest_progress(user_id: int, quest_id: int):
                   "visited": l.id in done} for l in stops]
         return {"stops": items,
                 "completed": bool(items) and all(i["visited"] for i in items)}
+
+@app.get("/")
+def health_check():
+    return {"status": "ok"}
