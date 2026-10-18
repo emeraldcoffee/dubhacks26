@@ -1,7 +1,8 @@
 import json
 import time
 import os
-from typing import Optional
+from typing import Optional, Any
+from pydantic import model_validator
 from dotenv import load_dotenv
 from fastapi import APIRouter, HTTPException
 from google import genai
