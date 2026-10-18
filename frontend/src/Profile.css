@@ -1,0 +1,120 @@
+/* Uses tokens + base layout from theme.css */
+
+/* ---------- header + user ---------- */
+.pf-head {
+  background: var(--paper);
+  border-bottom: 1px solid var(--line);
+}
+.pf-head-inner {
+  padding: 22px var(--page-pad, 20px) 34px;
+}
+.pf-head h1 {
+  margin: 0;
+  font-size: 30px;
+  font-weight: 600;
+  letter-spacing: -.02em;
+  line-height: 1.15;
+}
+
+.pf-user {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  margin-top: 36px;
+  text-align: left;
+  color: var(--ink);
+}
+.pf-avatar {
+  width: 76px;
+  height: 76px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  background: var(--blue-soft);
+  border: 3px solid var(--blue-line);
+  font-family: var(--font-head);
+  font-size: 24px;
+  font-weight: 600;
+}
+.pf-user-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.pf-user-text strong {
+  font-family: var(--font-head);
+  font-size: 22px;
+  font-weight: 600;
+  letter-spacing: -.01em;
+}
+.pf-user-text span {
+  font-size: 16px;
+  letter-spacing: .02em;
+  color: var(--blue);
+}
+
+/* ---------- settings list ---------- */
+.pf-body {
+  padding: 26px var(--page-pad, 20px) 32px;
+}
+.pf-body h2 {
+  margin: 0 0 24px;
+  font-size: 22px;
+  font-weight: 500;
+  letter-spacing: -.01em;
+}
+
+.pf-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border-top: 1px solid var(--line);
+}
+.pf-list li { border-bottom: 1px solid var(--line); }
+
+.pf-row {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 24px 0;
+  text-align: left;
+  color: var(--ink);
+  transition: background .15s;
+}
+.pf-row:active { background: rgba(38, 39, 47, .04); }
+
+.pf-tile {
+  width: 40px;
+  height: 40px;
+  border-radius: var(--r-sm);
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  color: var(--ink);
+}
+.pf-tile--blue  { background: var(--blue-soft); }
+.pf-tile--pink  { background: #fbe6ea; }
+.pf-tile--cream { background: var(--cream); }
+.pf-tile--white { background: #fff; }
+
+.pf-row-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.pf-row-text strong {
+  font-size: 17px;
+  font-weight: 500;
+  letter-spacing: .01em;
+}
+.pf-row-text span {
+  font-size: 14.5px;
+  color: var(--muted);
+}

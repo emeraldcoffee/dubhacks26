@@ -1,0 +1,93 @@
+@import url("https://fonts.googleapis.com/css2?family=Courier+Prime:wght@400;700&family=Karla:wght@400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&display=swap");
+
+:root {
+  /* surfaces */
+  --bg: #efebe6;
+  --paper: #faf6f1;
+  --line: #e2dad0;
+
+  /* text */
+  --ink: #26272f;
+  --ink-bar: #282a38;
+  --muted: #7b7a80;
+
+  /* blue: primary accent color, links, tags, borders, active states */
+  --blue: #3b5ea6;
+  --blue-deep: #2f4c88;
+  --blue-soft: #e8f0fb;
+  --blue-line: #a9c4ec;
+  --blue-mid: #a9c3e8;
+  --blue-chip: #dce8f8;
+
+  /* warm highlights */
+  --cream: #fcf7e0;
+  --butter: #f3e68f;
+
+  /* layout */
+  --page-pad: 20px;
+
+  /* corner radii */
+  --r-xs: 2px;
+  --r-sm: 4px;
+  --r-md: 6px;
+  --r-lg: 10px;
+
+  /* type */
+  --font-head: "Space Grotesk", system-ui, -apple-system, sans-serif;
+  --font-body: "Karla", system-ui, -apple-system, sans-serif;
+  --font-mono: "Courier Prime", "Courier New", monospace;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: #e4dfd8;
+  color: var(--ink);
+  font-family: var(--font-body);
+  font-size: 15px;
+  -webkit-font-smoothing: antialiased;
+}
+
+h1, h2, h3 { font-family: var(--font-head); color: var(--ink); }
+
+button { font: inherit; color: inherit; cursor: pointer; border: 0; background: none; padding: 0; }
+button:focus-visible, textarea:focus-visible, input:focus-visible {
+  outline: 2px solid var(--blue);
+  outline-offset: 2px;
+}
+
+/*  phone frame  */
+.phone {
+  position: relative;
+  max-width: 430px;
+  height: 100dvh;
+  margin: 0 auto;
+  background: var(--bg);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.scroll {
+  flex: 1;
+  overflow-y: auto;
+  padding: 14px 16px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.scroll--flush { padding: 0; gap: 0; }
+
+/*  utilities  */
+.muted { color: var(--muted); }
+.small { font-size: 12px; }
+.accent { color: var(--blue); }
+.mono {
+  font-family: var(--font-mono);
+  text-transform: uppercase;
+  letter-spacing: .04em;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * { transition: none !important; }
+}

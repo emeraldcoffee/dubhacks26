@@ -3,10 +3,9 @@ import { MapContainer, TileLayer, Circle, Marker, useMap } from "react-leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import {
-  ArrowLeft,
-  SlidersHorizontal,
   Sparkles,
-  Lightbulb,
+  ArrowUp,
+  Loader,
   Coffee,
   Croissant,
   UtensilsCrossed,
@@ -14,20 +13,17 @@ import {
   Plus,
   Minus,
   Crosshair,
-  House,
-  CirclePlus,
-  User,
   Footprints,
   Navigation,
-  ChevronDown,
 } from "lucide-react";
+import AppShell, { PageHeader } from "./AppShell";
 import "./CreateCrawl.css";
 
-/* static data (swap for API calls later) */
+/*  static data (swap for API calls later) */
 const CATEGORIES = [
   { id: "cafe", label: "Cafes", count: 18, Icon: Coffee },
-  { id: "bakery", label: "Bakeries", count: 12, Icon: Croissant },
-  { id: "restaurant", label: "Restaraunts", count: 9, Icon: UtensilsCrossed },
+  { id: "bakery", label: "Bakery", count: 12, Icon: Croissant },
+  { id: "restaurant", label: "Restaurants", count: 9, Icon: UtensilsCrossed },
 ];
 
 const TAGS = [
@@ -37,7 +33,7 @@ const TAGS = [
   "Low Sugar",
 ];
 
-const SOHO = [40.7233, -74.003];
+const SEATTLE = [47.6062, -122.3321];
 const MI_TO_M = 1609.34;
 
 /* A pin drawn with CSS so we avoid Leaflet's broken default icon in Vite */
@@ -76,18 +72,40 @@ function MapZoomButtons() {
   );
 }
 
-export default function CreateCrawl({ onBuild }) {
+export default function CreateCrawl({
+  onBuild,
+  onNavigate,
+  onGenerate = (text) => console.log("generate from prompt:", text),
+}) {
   const [prompt, setPrompt] = useState("");
   const [categories, setCategories] = useState(["cafe", "bakery"]);
   const [tags, setTags] = useState(["Dairy-Free Milk", "Gluten-Free Options", "Low Sugar"]);
   const [radius, setRadius] = useState(1.5); // miles
-  const [pin, setPin] = useState(SOHO);
+  const [pin, setPin] = useState(SEATTLE);
   const [editingPin, setEditingPin] = useState(false);
+  const [generating, setGenerating] = useState(false);
+
+  const handleGenerate = async () => {
+    if (!prompt.trim() || generating) return;
+    setGenerating(true);
+    try {
+      await onGenerate?.(prompt.trim());
+    } finally {
+      setGenerating(false);
+    }
+  };
+
+  const handlePromptKey = (e) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      handleGenerate();
+    }
+  };
 
   const toggle = (list, setList, value) =>
     setList(list.includes(value) ? list.filter((v) => v !== value) : [...list, value]);
 
-  /* Mock estimate, replace with a call to Python backend (POST /crawls/preview) */
+  /* Mock estimate – replace with a call to your Python backend (POST /crawls/preview) */
   const summary = useMemo(() => {
     const available = CATEGORIES.filter((c) => categories.includes(c.id)).reduce(
       (n, c) => n + c.count,
@@ -105,56 +123,48 @@ export default function CreateCrawl({ onBuild }) {
     onBuild?.({ prompt, categories, tags, radius, pin });
 
   return (
-    <div className="phone">
-      <div className="scroll">
-        {/*  top bar  */}
-        <header className="topbar">
-          <button className="icon-btn" aria-label="Back">
-            <ArrowLeft size={18} />
-          </button>
-          <button className="icon-btn" aria-label="Settings">
-            <SlidersHorizontal size={18} />
-          </button>
-        </header>
+    <AppShell active="create" onNavigate={onNavigate}>
+      <div className="scroll scroll--flush">
+        <PageHeader title="New list" onBack={() => onNavigate?.("home")} />
+ 
+        <div className="page-body">
 
-        {/* title  */}
-        <section className="title-block">
-          <div className="title-row">
-            <span className="badge-new">
-              <Navigation size={11} /> New Food Crawl
-            </span>
-            
-          </div>
-          <h1>
-            SoHo, New York
-          </h1>
-        </section>
-
-        {/*smart generator */}
-        <section className="card card--pink">
+        {/* ---------- smart generator ---------- */}
+        <section className="card card--blue">
           <div className="card-head">
             <span className="card-title">
               <Sparkles size={14} className="accent" /> Smart Generator
             </span>
           </div>
-          <textarea
-            value={prompt}
-            onChange={(e) => setPrompt(e.target.value)}
-            placeholder="Describe your ideal crawl! (e.g. matcha cloud lattes, dog friendly, lactose-free cream pastries)"
-            rows={3}
-          />
-          <div className="hint-row">
-            <button className="link-btn" onClick={() => setPrompt("")}>
-              Clear
+          <div className="prompt-box">
+            <textarea
+              value={prompt}
+              onChange={(e) => setPrompt(e.target.value)}
+              onKeyDown={handlePromptKey}
+              enterKeyHint="send"
+              placeholder="Describe your ideal treat... (e.g. matcha cloud lattes, tonkatsu ramen, chicken caesar salad wraps)"
+              rows={3}
+            />
+            {prompt && (
+              <button className="prompt-clear" onClick={() => setPrompt("")}>
+                Clear
+              </button>
+            )}
+            <button
+              className="send-btn"
+              aria-label="Generate crawl"
+              onClick={handleGenerate}
+              disabled={!prompt.trim() || generating}
+            >
+              {generating ? <Loader size={16} className="spin" /> : <ArrowUp size={18} />}
             </button>
           </div>
         </section>
 
-        {/* location focus  */}
+        {/*  location focus*/}
         <section className="card">
           <div className="card-head">
             <span className="card-title">Location Focus</span>
-            <span className="muted small">Multi-select enabled</span>
           </div>
           <div className="cat-grid">
             {CATEGORIES.map(({ id, label, count, Icon }) => {
@@ -180,7 +190,7 @@ export default function CreateCrawl({ onBuild }) {
           </div>
         </section>
 
-        {/*  dietary restrictions */}
+        {/* ---------- dietary ---------- */}
         <section className="card">
           <div className="card-head">
             <span className="card-title">Dietary &amp; Atmosphere</span>
@@ -205,7 +215,7 @@ export default function CreateCrawl({ onBuild }) {
           </div>
         </section>
 
-        {/*walking radius */}
+        {/* ---------- walking radius ---------- */}
         <section className="card">
           <div className="card-head card-head--top">
             <div>
@@ -223,6 +233,7 @@ export default function CreateCrawl({ onBuild }) {
               center={pin}
               zoom={14}
               zoomControl={false}
+              zoomSnap={0}
               attributionControl={false}
               scrollWheelZoom={false}
               style={{ height: "100%", width: "100%" }}
@@ -231,7 +242,7 @@ export default function CreateCrawl({ onBuild }) {
               <Circle
                 center={pin}
                 radius={radius * MI_TO_M}
-                pathOptions={{ color: "#7a4b5e", weight: 2, fillColor: "#7a4b5e", fillOpacity: 0.14 }}
+                pathOptions={{ color: "#3b5ea6", weight: 2, fillColor: "#3b5ea6", fillOpacity: 0.14 }}
               />
               <Marker
                 position={pin}
@@ -285,40 +296,22 @@ export default function CreateCrawl({ onBuild }) {
             ))}
           </div>
         </section>
-      </div>
 
-      {/* footer*/}
-      <footer className="footer">
-        <div className="cta-bar">
+        {/* build crawl (end of page content) */}
+        <section className="build-section">
           <div className="loop">
-            <span className="loop-label">
-              <Footprints size={12} /> Walking Loop
-            </span>
             <span className="loop-val">
               <strong>{summary.stops} Stops</strong>{" "}
               <span className="muted small">• ~{summary.totalMi} mi total</span>
             </span>
           </div>
           <button className="build-btn" disabled={summary.stops === 0} onClick={handleBuild}>
-            <Navigation size={16} /> Build My Crawl
+            <Navigation size={16} /> Build My List
           </button>
+        </section>
         </div>
+      </div>
 
-        <nav className="tabbar">
-          <button className="tab">
-            <House size={20} />
-            <span>Home</span>
-          </button>
-          <button className="tab tab--on">
-            <CirclePlus size={22} />
-            <span>Create</span>
-          </button>
-          <button className="tab">
-            <User size={20} />
-            <span>Profile</span>
-          </button>
-        </nav>
-      </footer>
-    </div>
+      </AppShell>
   );
 }
