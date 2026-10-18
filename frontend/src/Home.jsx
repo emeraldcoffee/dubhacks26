@@ -1,8 +1,9 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   ArrowRight,
   ArrowUp,
   ArrowDown,
+  Check,
   ChevronRight,
   Coffee,
   Croissant,
@@ -11,6 +12,7 @@ import {
   Ellipsis,
   Heart,
   IceCreamCone,
+  Leaf,
   MessageCircle,
   Pizza,
   Sandwich,
@@ -22,28 +24,15 @@ import {
   UtensilsCrossed,
 } from "lucide-react";
 import AppShell, { PageHeader } from "./AppShell";
+import { api } from "./api";
+import { iconFor, initialsOf } from "./helpers";
+import { useCheckIn } from "./useCheckIn";
 import "./Home.css";
 
-/* mock data (swap for API calls later) */
-const ACTIVE_CRAWL = {
-  no: "028",
-  title: "Little treats, big walk",
-  meta: "WEST VILLAGE · 4 STOPS · 1.2 MI",
-  collected: "2/4 COLLECTED",
-  stops: [
-    { label: "Croissant", Icon: Croissant, done: true },
-    { label: "Flat white", Icon: Coffee, done: true },
-    { label: "Gelato", n: 3 },
-    { label: "Cheesecake", n: 4 },
-  ],
-  next: "pistachio at L'Arte del Gelato",
-};
+/* quest 1 is the "Matcha crawl" created by seed.py */
+const MATCHA_QUEST_ID = 1;
 
-const OTHER_CRAWL = {
-  title: "The dumpling trail",
-  meta: "CHINATOWN · 1 OF 3 STAMPED",
-};
-
+/* the feed is still mock data (the backend has no feed endpoint yet) */
 const POSTS = [
   {
     id: 1,
@@ -155,8 +144,8 @@ function CrawlCard({ crawl, tone = "blue", badge, footer }) {
       </div>
       <hr className="crawl-rule" />
       <div className="stamps" style={{ "--cols": crawl.stops.length }}>
-        {crawl.stops.map((s) => (
-          <Stamp key={s.label} {...s} />
+        {crawl.stops.map((s, i) => (
+          <Stamp key={`${s.label}-${i}`} {...s} />
         ))}
       </div>
       {footer}
@@ -242,46 +231,124 @@ function Post({ post }) {
   );
 }
 
+/* ---------- crawl helpers ---------- */
+function cardFromCrawl(crawl) {
+  const done = crawl.stops.filter((s) => s.visited).length;
+  return {
+    no: crawl.no,
+    title: crawl.title,
+    meta: `SEATTLE · ${crawl.stops.length} STOPS · ${crawl.miles.toFixed(1)} MI`,
+    collected: `${done}/${crawl.stops.length} COLLECTED`,
+    stops: crawl.stops.map((s, i) => ({
+      label: s.name,
+      Icon: iconFor(s.category),
+      done: s.visited,
+      n: i + 1,
+    })),
+    next: crawl.stops.find((s) => !s.visited) ?? null,
+  };
+}
+
 /* page */
-export default function Home({ onNavigate }) {
+export default function Home({ user, crawl, serverError, onCrawlChange, onNavigate }) {
+  const name = user?.display_name ?? "Jules";
+  const [quest, setQuest] = useState(null);
+  const { checkIn, busy, message } = useCheckIn({ user, crawl, onCrawlChange, serverError });
+
+  /* progress on the static "Matcha crawl" quest (refreshes after each check-in) */
+  useEffect(() => {
+    if (!user) return;
+    let alive = true;
+    api
+      .questProgress(user.id, MATCHA_QUEST_ID)
+      .then((q) => alive && setQuest(q))
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, [user, crawl]);
+
+  const card = crawl ? cardFromCrawl(crawl) : null;
+  const questStops = quest?.stops ?? [];
+  const questDone = questStops.filter((s) => s.visited).length;
+  const activeCount = (crawl ? 1 : 0) + (questStops.length ? 1 : 0);
+
   return (
     <AppShell active="home" onNavigate={onNavigate}>
       <div className="scroll scroll--flush">
         <PageHeader
-          title="Welcome back, Jules."
+          title={`Welcome back, ${name}.`}
           subtitle="Good bites. Better company. Keep collecting."
         />
 
         <main className="home-body">
+          {serverError && (
+            <p className="notice" role="status">
+              {serverError}
+            </p>
+          )}
+
           {/*  active crawls */}
           <section>
             <div className="sec-head">
               <h2>A few bites to go</h2>
-              <span className="mono sec-tag">2 active</span>
+              <span className="mono sec-tag">{activeCount} active</span>
             </div>
 
-            <CrawlCard
-              crawl={ACTIVE_CRAWL}
-              tone="cream"
-              badge={ACTIVE_CRAWL.collected}
-              footer={
-                <button className="upnext">
-                  <span>Up next: {ACTIVE_CRAWL.next}</span>
-                  <ArrowRight size={18} />
+            {card ? (
+              <>
+                <CrawlCard
+                  crawl={card}
+                  tone="cream"
+                  badge={card.collected}
+                  footer={
+                    card.next ? (
+                      <button className="upnext" onClick={() => checkIn(card.next)} disabled={busy}>
+                        <span>{busy ? "Checking in…" : `Up next: ${card.next.name}`}</span>
+                        <ArrowRight size={18} />
+                      </button>
+                    ) : (
+                      <div className="upnext upnext--done">
+                        <span>All stamped. Nice crawl.</span>
+                        <Check size={18} />
+                      </div>
+                    )
+                  }
+                />
+                <div className="crawl-foot">
+                  <p className={`crawl-msg ${message ? "crawl-msg--error" : ""}`} role="status">
+                    {message || (card.next ? "Tap the bar when you arrive to check in." : "")}
+                  </p>
+                  <button className="link-btn" onClick={() => onNavigate?.("route")}>
+                    View route
+                  </button>
+                </div>
+              </>
+            ) : (
+              <div className="empty-crawl">
+                <h3>Start your first crawl</h3>
+                <p>Pick a food, set a walking radius, and we'll line up the stops.</p>
+                <button className="empty-cta" onClick={() => onNavigate?.("create")}>
+                  Create a crawl
                 </button>
-              }
-            />
+              </div>
+            )}
 
-            <button className="trail">
-              <span className="trail-icon">
-                <Soup size={20} />
-              </span>
-              <span className="trail-text">
-                <strong>{OTHER_CRAWL.title}</strong>
-                <span className="mono">{OTHER_CRAWL.meta}</span>
-              </span>
-              <ChevronRight size={18} />
-            </button>
+            {questStops.length > 0 && (
+              <div className="trail">
+                <span className="trail-icon">
+                  <Leaf size={20} />
+                </span>
+                <span className="trail-text">
+                  <strong>Every Ramen Spot in Seattle </strong>
+                  <span className="mono">
+                    Japanese· {questDone} OF {questStops.length} STAMPED
+                    {quest?.completed ? " · Ramen Ruler" : ""}
+                  </span>
+                </span>
+                {quest?.completed && <Check size={18} />}
+              </div>
+            )}
           </section>
 
           {/*  feed  */}
@@ -293,8 +360,8 @@ export default function Home({ onNavigate }) {
 
             <div className="compose">
               <button className="compose-row" onClick={() => onNavigate?.("create")}>
-                <Avatar initials="JL" tone="paper" />
-                <span className="compose-text">What did you eat, Jules?</span>
+                <Avatar initials={initialsOf(name)} tone="paper" />
+                <span className="compose-text">What did you eat, {name}?</span>
                 <SquarePen size={20} />
               </button>
               <div className="compose-links">

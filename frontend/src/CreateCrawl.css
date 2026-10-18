@@ -1,6 +1,6 @@
 /* Uses tokens + base layout from theme.css (colors, radii, fonts, .phone, .scroll) */
 
-/* page body (under the shared header)  */
+/* ---------- page body (under the shared header) ---------- */
 .page-body {
   display: flex;
   flex-direction: column;
@@ -180,3 +180,90 @@ textarea::placeholder { color: #8d98ad; }
 .build-btn:active { transform: scale(.99); }
 .build-btn:hover { background: #3a3d4d; }
 .build-btn:disabled { background: #c3c8d4; cursor: not-allowed; }
+/* ---------- status notice ---------- */
+.notice {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: var(--r-sm);
+  background: var(--cream);
+  border: 1px solid #e6dca6;
+  font-size: 13.5px;
+  color: var(--ink);
+}
+
+/* ---------- recommendation (from /recommend) ---------- */
+.rec { margin-top: 14px; display: flex; flex-direction: column; gap: 10px; }
+.rec-blurb {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  color: var(--blue);
+}
+.rec-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.rec-item {
+  width: 100%;
+  text-align: left;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 10px 12px;
+  background: #fff;
+  border: 1px solid var(--blue-line);
+  border-radius: var(--r-sm);
+}
+.rec-item--on { background: var(--cream); border: 1.5px solid var(--blue); }
+.rec-name {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--font-head);
+  font-weight: 500;
+  font-size: 15px;
+}
+.rec-tag {
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  color: var(--blue);
+  background: var(--blue-chip);
+  padding: 2px 6px;
+  border-radius: var(--r-xs);
+}
+.rec-reason { font-size: 13.5px; color: var(--muted); }
+.rec-hint { margin: 0; }
+
+/* ---------- numbered stop markers on the map ---------- */
+.stop-pin-wrap { background: none; border: 0; }
+.stop-pin {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: var(--blue);
+  color: #fff;
+  border: 2px solid #fff;
+  font-size: 11px;
+  font-weight: 700;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, .35);
+}
+
+/* ---------- what you're craving (spotted in the Smart Generator text) ---------- */
+.intent { margin-top: 10px; display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.intent-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 6px 5px 9px;
+  border-radius: var(--r-sm);
+  background: var(--cream);
+  border: 1px solid var(--blue-line);
+  color: var(--blue);
+  font-size: 13px;
+  font-weight: 600;
+}
+.intent-chip button { display: grid; place-items: center; padding: 2px; color: var(--blue); }
+.intent-note { color: var(--muted); }

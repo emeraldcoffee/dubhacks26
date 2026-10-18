@@ -1,5 +1,4 @@
 /*  header  */
-
 .home-body {
   display: flex;
   flex-direction: column;
@@ -258,4 +257,63 @@
   font-size: 10.5px;
   color: var(--blue);
   letter-spacing: .08em;
+}
+/* ---------- status notice + check-in message ---------- */
+.notice {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: var(--r-sm);
+  background: var(--cream);
+  border: 1px solid #e6dca6;
+  font-size: 13.5px;
+  color: var(--ink);
+}
+.crawl-msg {
+  margin: 8px 2px 0;
+  min-height: 1em;
+  font-size: 13px;
+  color: var(--muted);
+}
+.crawl-msg--error { color: #9b2c2c; }
+
+.upnext:disabled { opacity: .7; cursor: default; }
+.upnext--done { cursor: default; }
+
+/* ---------- empty state (no crawl yet) ---------- */
+.empty-crawl {
+  background: var(--cream);
+  border: 1px solid var(--blue-line);
+  border-radius: var(--r-sm);
+  padding: 18px 16px 20px;
+}
+.empty-crawl h3 {
+  margin: 0;
+  font-size: 21px;
+  font-weight: 500;
+  letter-spacing: -.01em;
+}
+.empty-crawl p { margin: 8px 0 16px; font-size: 14.5px; color: var(--muted); }
+.empty-cta {
+  background: var(--ink-bar);
+  color: #fff;
+  font-weight: 600;
+  font-size: 14.5px;
+  padding: 12px 18px;
+  border-radius: var(--r-sm);
+}
+
+/* ---------- message + "View route" under the active crawl ---------- */
+.crawl-foot {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 8px;
+}
+.crawl-foot .crawl-msg { margin: 0; flex: 1; }
+.crawl-foot .link-btn {
+  color: var(--blue);
+  font-size: 13.5px;
+  font-weight: 600;
+  white-space: nowrap;
 }

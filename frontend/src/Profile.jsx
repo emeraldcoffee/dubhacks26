@@ -1,9 +1,7 @@
 import { Bell, ChevronRight, Heart, User, Utensils } from "lucide-react";
 import AppShell, { PageHeader } from "./AppShell";
+import { initialsOf } from "./helpers";
 import "./Profile.css";
-
-/* mock data (swap for real user data later) */
-const USER = { name: "Jules", initials: "JL" };
 
 const SETTINGS = [
   {
@@ -37,19 +35,21 @@ const SETTINGS = [
 ];
 
 export default function Profile({
+  user,
   onNavigate,
   onSelect = (id) => console.log("open settings:", id),
 }) {
+  const name = user?.display_name ?? "Jules";
   return (
     <AppShell active="profile" onNavigate={onNavigate}>
       <div className="scroll scroll--flush">
         <PageHeader title="Profile">
           <button className="pf-user" onClick={() => onSelect("profile")}>
             <span className="pf-avatar" aria-hidden="true">
-              {USER.initials}
+              {initialsOf(name)}
             </span>
             <span className="pf-user-text">
-              <strong>{USER.name}</strong>
+              <strong>{name}</strong>
               <span>Show profile</span>
             </span>
             <ChevronRight size={22} />
