@@ -6,6 +6,9 @@ Whisked is a food discovery app that learns what you like and plans around you. 
 
 Built at **DubHacks 26** (Seattle).
 
+- **Demo video:** 
+- **Devpost:** 
+
 ## What it does
 
 - **Personalized restaurant search:** finds places that fit your preferences instead of showing everyone the same list.
