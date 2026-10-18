@@ -1,11 +1,12 @@
 import os
 from contextlib import asynccontextmanager
-from math import radians, sin, cos, asin, sqrt
 from typing import Optional
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from sqlmodel import SQLModel, Session, create_engine, select
 from models import User, Location, Visit, Dish, QuestStop
+from utils import meters_between
+from ai import router as ai_router
 
 engine = create_engine("sqlite:///app.db")
 DEMO_MODE = os.getenv("DEMO_MODE") == "1"   # skips the distance check
@@ -18,6 +19,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(lifespan=lifespan)
 app.add_middleware(CORSMiddleware, allow_origins=["*"],
                    allow_methods=["*"], allow_headers=["*"])
+app.include_router(ai_router)
 
 class UserCreate(SQLModel):
     handle: str
@@ -35,12 +37,6 @@ class DishCreate(SQLModel):
     name: str
     rating: Optional[float] = None
     image_path: Optional[str] = None
-
-def meters_between(lat1, lng1, lat2, lng2):
-    p1, p2 = radians(lat1), radians(lat2)
-    dp, dl = p2 - p1, radians(lng2 - lng1)
-    a = sin(dp / 2) ** 2 + cos(p1) * cos(p2) * sin(dl / 2) ** 2
-    return 2 * 6371000 * asin(sqrt(a))
 
 @app.get("/health")
 def health():
