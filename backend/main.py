@@ -7,6 +7,7 @@ from sqlmodel import SQLModel, Session, create_engine, select
 from models import User, Location, Visit, Dish, QuestStop
 from utils import meters_between
 from ai import router as ai_router
+from search import router as search_router
 
 engine = create_engine("sqlite:///app.db")
 DEMO_MODE = os.getenv("DEMO_MODE") == "1"   # skips the distance check
@@ -20,6 +21,7 @@ app = FastAPI(lifespan=lifespan)
 app.add_middleware(CORSMiddleware, allow_origins=["*"],
                    allow_methods=["*"], allow_headers=["*"])
 app.include_router(ai_router)
+app.include_router(search_router)
 
 class UserCreate(SQLModel):
     handle: str
