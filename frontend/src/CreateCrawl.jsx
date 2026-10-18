@@ -3,50 +3,34 @@ import { MapContainer, TileLayer, Circle, Marker, useMap } from "react-leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import {
-  ArrowLeft,
-  SlidersHorizontal,
   Sparkles,
-  Lightbulb,
-  Coffee,
-  Croissant,
-  UtensilsCrossed,
+  ArrowUp,
+  Loader,
   Check,
   Plus,
   Minus,
   Crosshair,
-  House,
-  CirclePlus,
-  User,
-  Footprints,
   Navigation,
-  ChevronDown,
+  X,
 } from "lucide-react";
+import AppShell, { PageHeader } from "./AppShell";
+import { api } from "./api";
+import { MI_TO_M, metersBetween, orderStops, routeMiles } from "./geo";
+import {
+  LOCATION_TYPES,
+  detectCategory,
+  iconFor,
+  labelFor,
+  typeOfCategory,
+  typeOfLocation,
+} from "./helpers";
+import { pinIcon, stopIcon } from "./mapIcons";
 import "./CreateCrawl.css";
 
-/* static data (swap for API calls later) */
-const CATEGORIES = [
-  { id: "cafe", label: "Cafes", count: 18, Icon: Coffee },
-  { id: "bakery", label: "Bakeries", count: 12, Icon: Croissant },
-  { id: "restaurant", label: "Restaraunts", count: 9, Icon: UtensilsCrossed },
-];
+const TAGS = ["Dairy-Free Milk", "Gluten-Free Options", "Nut-Free", "Low Sugar"];
 
-const TAGS = [
-  "Dairy-Free Milk",
-  "Gluten-Free Options",
-  "Nut-Free",
-  "Low Sugar",
-];
-
-const SOHO = [40.7233, -74.003];
-const MI_TO_M = 1609.34;
-
-/* A pin drawn with CSS so we avoid Leaflet's broken default icon in Vite */
-const pinIcon = L.divIcon({
-  className: "pin-wrap",
-  html: '<div class="pin"><div class="pin-dot"></div></div>',
-  iconSize: [32, 40],
-  iconAnchor: [16, 40],
-});
+const SEATTLE = [47.6062, -122.3321];
+const MAX_STOPS = 8;
 
 /* Keeps the map zoomed so the whole radius circle is visible */
 function FitCircle({ center, radiusM }) {
@@ -76,249 +60,418 @@ function MapZoomButtons() {
   );
 }
 
-export default function CreateCrawl({ onBuild }) {
+export default function CreateCrawl({ user, serverError, onBuild, onNavigate }) {
   const [prompt, setPrompt] = useState("");
-  const [categories, setCategories] = useState(["cafe", "bakery"]);
+  const [locations, setLocations] = useState([]); // every place from the backend
+  const [loading, setLoading] = useState(true);
+  const [types, setTypes] = useState([]); // selected location types: cafe, bakery, restaurant
+  const [dish, setDish] = useState(null); // what you're craving, e.g. "matcha" (a backend category)
   const [tags, setTags] = useState(["Dairy-Free Milk", "Gluten-Free Options", "Low Sugar"]);
   const [radius, setRadius] = useState(1.5); // miles
-  const [pin, setPin] = useState(SOHO);
+  const [pin, setPin] = useState(SEATTLE);
   const [editingPin, setEditingPin] = useState(false);
-
-  const toggle = (list, setList, value) =>
-    setList(list.includes(value) ? list.filter((v) => v !== value) : [...list, value]);
-
-  /* Mock estimate, replace with a call to Python backend (POST /crawls/preview) */
-  const summary = useMemo(() => {
-    const available = CATEGORIES.filter((c) => categories.includes(c.id)).reduce(
-      (n, c) => n + c.count,
-      0
-    );
-    const stops = Math.max(0, Math.min(8, Math.round((available / 30) * radius * 2)));
-    const totalMi = stops === 0 ? 0 : +(0.25 + stops * 0.28 * (radius / 1.5)).toFixed(1);
-    return { stops, totalMi };
-  }, [categories, radius]);
+  const [generating, setGenerating] = useState(false);
+  const [rec, setRec] = useState(null); // answer from POST /recommend
+  const [startId, setStartId] = useState(null); // stop to begin the route at
+  const [notice, setNotice] = useState("");
 
   const walkMinutes = Math.round(radius * 17);
   const radiusPct = ((radius - 0.5) / 4.5) * 100;
 
-  const handleBuild = () =>
-    onBuild?.({ prompt, categories, tags, radius, pin });
+  /* ---------- load places from the backend ---------- */
+  useEffect(() => {
+    let alive = true;
+    api
+      .getLocations()
+      .then((rows) => {
+        if (!alive) return;
+        setLocations(rows);
+      })
+      .catch((e) => alive && setNotice(e.message))
+      .finally(() => alive && setLoading(false));
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  const byId = useMemo(() => Object.fromEntries(locations.map((l) => [l.id, l])), [locations]);
+
+  /* places inside the walking radius */
+  const nearby = useMemo(() => {
+    const here = { lat: pin[0], lng: pin[1] };
+    return locations.filter((l) => metersBetween(here, l) <= radius * MI_TO_M);
+  }, [locations, pin, radius]);
+
+  const categoryIds = useMemo(() => [...new Set(locations.map((l) => l.category))], [locations]);
+
+  /* the three type cards, with live "nearby" counts */
+  const typeList = useMemo(
+    () =>
+      LOCATION_TYPES.map((t) => ({
+        ...t,
+        count: nearby.filter((l) => typeOfLocation(l) === t.id).length,
+      })),
+    [nearby]
+  );
+
+  /* the route: selected types (and the dish, if you named one), inside the radius, nearest-first */
+  const route = useMemo(() => {
+    const start = { lat: pin[0], lng: pin[1] };
+    let pool = nearby.filter(
+      (l) => types.includes(typeOfLocation(l)) && (!dish || l.category === dish)
+    );
+    const chosen = byId[startId];
+    if (chosen && !pool.some((l) => l.id === chosen.id)) pool = [chosen, ...pool];
+    const ordered = orderStops(start, pool, chosen?.id ?? null).slice(0, MAX_STOPS);
+    return { stops: ordered, miles: routeMiles(start, ordered) };
+  }, [nearby, types, dish, byId, startId, pin]);
+
+  const toggle = (list, setList, value) =>
+    setList(list.includes(value) ? list.filter((v) => v !== value) : [...list, value]);
+
+  /* ---------- Smart Generator ---------- */
+  /* typing "matcha" sets the dish and selects its location type (cafe) */
+  const handlePromptChange = (value) => {
+    setPrompt(value);
+    const found = detectCategory(value, categoryIds);
+    if (found !== dish) {
+      setDish(found);
+      setRec(null);
+      setStartId(null);
+      if (found) setTypes([typeOfCategory(found)]);
+    }
+  };
+
+  const clearDish = () => {
+    setDish(null);
+    setRec(null);
+    setStartId(null);
+  };
+
+  const clearPrompt = () => {
+    setPrompt("");
+    clearDish();
+  };
+
+  /* Smart Generator -> POST /recommend */
+  const handleGenerate = async () => {
+    const text = prompt.trim();
+    if (!text || generating) return;
+    if (!user) {
+      setNotice(serverError || "Still connecting to the server. Try again in a moment.");
+      return;
+    }
+    // search the dish you named, or else the first place type you picked
+    const searchCategory =
+      dish ?? locations.find((l) => types.includes(typeOfLocation(l)))?.category;
+    if (!searchCategory) {
+      setNotice("Tell us what you're craving (like matcha) or pick a location type first.");
+      return;
+    }
+    setNotice("");
+    setGenerating(true);
+    try {
+      const note = tags.length ? `${text}. Dietary needs: ${tags.join(", ")}.` : text;
+      const result = await api.recommend({
+        user_id: user.id,
+        category: searchCategory,
+        lat: pin[0],
+        lng: pin[1],
+        minutes: walkMinutes,
+        note,
+      });
+      setRec(result);
+      setStartId(result.pick.location_id);
+    } catch (e) {
+      setNotice(e.message);
+    } finally {
+      setGenerating(false);
+    }
+  };
+
+  const handlePromptKey = (e) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      handleGenerate();
+    }
+  };
+
+  /* ---------- Build -> hand the ordered stops to App ---------- */
+  const handleBuild = () => {
+    if (route.stops.length === 0) return;
+    const typeLabel = LOCATION_TYPES.find((t) => t.id === types[0])?.label;
+    onBuild?.({
+      title: dish ? `${labelFor(dish)} crawl` : types.length === 1 ? `${typeLabel} crawl` : "Custom crawl",
+      types,
+      tags,
+      prompt,
+      pin,
+      radius,
+      miles: route.miles,
+      blurb: rec?.quest_blurb ?? null,
+      stops: route.stops.map(({ id, name, category, lat, lng }) => ({
+        id,
+        name,
+        category,
+        lat,
+        lng,
+      })),
+    });
+  };
+
+  const shownNotice = notice || serverError;
+  const DishIcon = dish ? iconFor(dish) : null;
 
   return (
-    <div className="phone">
-      <div className="scroll">
-        {/*  top bar  */}
-        <header className="topbar">
-          <button className="icon-btn" aria-label="Back">
-            <ArrowLeft size={18} />
-          </button>
-          <button className="icon-btn" aria-label="Settings">
-            <SlidersHorizontal size={18} />
-          </button>
-        </header>
+    <AppShell active="create" onNavigate={onNavigate}>
+      <div className="scroll scroll--flush">
+        <PageHeader title="New list" onBack={() => onNavigate?.("home")} />
 
-        {/* title  */}
-        <section className="title-block">
-          <div className="title-row">
-            <span className="badge-new">
-              <Navigation size={11} /> New Food Crawl
-            </span>
-            
-          </div>
-          <h1>
-            SoHo, New York
-          </h1>
-        </section>
+        <div className="page-body">
+          {shownNotice && (
+            <p className="notice" role="status">
+              {shownNotice}
+            </p>
+          )}
 
-        {/*smart generator */}
-        <section className="card card--pink">
-          <div className="card-head">
-            <span className="card-title">
-              <Sparkles size={14} className="accent" /> Smart Generator
-            </span>
-          </div>
-          <textarea
-            value={prompt}
-            onChange={(e) => setPrompt(e.target.value)}
-            placeholder="Describe your ideal crawl! (e.g. matcha cloud lattes, dog friendly, lactose-free cream pastries)"
-            rows={3}
-          />
-          <div className="hint-row">
-            <button className="link-btn" onClick={() => setPrompt("")}>
-              Clear
-            </button>
-          </div>
-        </section>
+          {/* ---------- smart generator ---------- */}
+          <section className="card card--blue">
+            <div className="card-head">
+              <span className="card-title">
+                <Sparkles size={14} className="accent" /> Smart Generator
+              </span>
+            </div>
+            <div className="prompt-box">
+              <textarea
+                value={prompt}
+                onChange={(e) => handlePromptChange(e.target.value)}
+                onKeyDown={handlePromptKey}
+                enterKeyHint="send"
+                placeholder="What are you craving? (e.g. matcha, something sweet, not too bitter)"
+                rows={3}
+              />
+              {prompt && (
+                <button className="prompt-clear" onClick={clearPrompt}>
+                  Clear
+                </button>
+              )}
+              <button
+                className="send-btn"
+                aria-label="Generate recommendation"
+                onClick={handleGenerate}
+                disabled={!prompt.trim() || generating}
+              >
+                {generating ? <Loader size={16} className="spin" /> : <ArrowUp size={18} />}
+              </button>
+            </div>
 
-        {/* location focus  */}
-        <section className="card">
-          <div className="card-head">
-            <span className="card-title">Location Focus</span>
-            <span className="muted small">Multi-select enabled</span>
-          </div>
-          <div className="cat-grid">
-            {CATEGORIES.map(({ id, label, count, Icon }) => {
-              const active = categories.includes(id);
-              return (
-                <button
-                  key={id}
-                  className={`cat ${active ? "cat--on" : ""}`}
-                  aria-pressed={active}
-                  onClick={() => toggle(categories, setCategories, id)}
-                >
-                  <span className="cat-top">
-                    <Icon size={18} />
-                    <span className={`check ${active ? "check--on" : ""}`}>
-                      {active && <Check size={11} strokeWidth={3} />}
+            {dish && (
+              <div className="intent">
+                <span className="intent-chip">
+                  <DishIcon size={14} />
+                  {labelFor(dish)}
+                  <button aria-label={`Stop searching for ${dish}`} onClick={clearDish}>
+                    <X size={12} />
+                  </button>
+                </span>
+                <span className="intent-note small">
+                  {LOCATION_TYPES.find((t) => t.id === typeOfCategory(dish))?.label} selected for you
+                </span>
+              </div>
+            )}
+
+            {rec && (
+              <div className="rec">
+                {rec.quest_blurb && <p className="rec-blurb">{rec.quest_blurb}</p>}
+                <ul className="rec-list">
+                  {[rec.pick, ...rec.backups].map((p, i) => {
+                    const loc = byId[p.location_id];
+                    if (!loc) return null;
+                    const on = startId === p.location_id;
+                    return (
+                      <li key={p.location_id}>
+                        <button
+                          className={`rec-item ${on ? "rec-item--on" : ""}`}
+                          aria-pressed={on}
+                          onClick={() => setStartId(p.location_id)}
+                        >
+                          <span className="rec-name">
+                            {loc.name}
+                            {i === 0 && <span className="rec-tag">Top pick</span>}
+                          </span>
+                          <span className="rec-reason">{p.reason}</span>
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ul>
+                <p className="rec-hint small muted">Tap a place to start your route there.</p>
+              </div>
+            )}
+          </section>
+
+          {/* ---------- location type ---------- */}
+          <section className="card">
+            <div className="card-head">
+              <span className="card-title">Location Type</span>
+            </div>
+            <div className="cat-grid">
+              {typeList.map(({ id, label, count, Icon }) => {
+                const active = types.includes(id);
+                return (
+                  <button
+                    key={id}
+                    className={`cat ${active ? "cat--on" : ""}`}
+                    aria-pressed={active}
+                    onClick={() => toggle(types, setTypes, id)}
+                  >
+                    <span className="cat-top">
+                      <Icon size={18} />
+                      <span className={`check ${active ? "check--on" : ""}`}>
+                        {active && <Check size={11} strokeWidth={3} />}
+                      </span>
                     </span>
-                  </span>
-                  <strong>{label}</strong>
-                  <span className="small">{count} nearby</span>
-                </button>
-              );
-            })}
-          </div>
-        </section>
-
-        {/*  dietary restrictions */}
-        <section className="card">
-          <div className="card-head">
-            <span className="card-title">Dietary &amp; Atmosphere</span>
-            <button className="link-btn" onClick={() => setTags([])}>
-              Reset
-            </button>
-          </div>
-          <div className="chips">
-            {TAGS.map((t) => {
-              const active = tags.includes(t);
-              return (
-                <button
-                  key={t}
-                  className={`chip ${active ? "chip--on" : ""}`}
-                  aria-pressed={active}
-                  onClick={() => toggle(tags, setTags, t)}
-                >
-                  {active ? <Check size={13} /> : <Plus size={13} />} {t}
-                </button>
-              );
-            })}
-          </div>
-        </section>
-
-        {/*walking radius */}
-        <section className="card">
-          <div className="card-head card-head--top">
-            <div>
-              <span className="card-title">Walking Radius</span>
-            </div>
-            <div className="radius-actions">
-              <button className="link-btn" onClick={() => setEditingPin((v) => !v)}>
-                {editingPin ? "Done" : "Edit pin"}
-              </button>
-            </div>
-          </div>
-
-          <div className="map-box">
-            <MapContainer
-              center={pin}
-              zoom={14}
-              zoomControl={false}
-              attributionControl={false}
-              scrollWheelZoom={false}
-              style={{ height: "100%", width: "100%" }}
-            >
-              <TileLayer url="https://tile.openstreetmap.org/{z}/{x}/{y}.png" />
-              <Circle
-                center={pin}
-                radius={radius * MI_TO_M}
-                pathOptions={{ color: "#7a4b5e", weight: 2, fillColor: "#7a4b5e", fillOpacity: 0.14 }}
-              />
-              <Marker
-                position={pin}
-                icon={pinIcon}
-                draggable={editingPin}
-                eventHandlers={{
-                  dragend: (e) => {
-                    const { lat, lng } = e.target.getLatLng();
-                    setPin([lat, lng]);
-                  },
-                }}
-              />
-              <FitCircle center={pin} radiusM={radius * MI_TO_M} />
-              <MapZoomButtons />
-            </MapContainer>
-
-            <div className="map-ctrl map-ctrl--right">
-              <button type="button" aria-label="Use my location" onClick={() => {
-                navigator.geolocation?.getCurrentPosition((p) =>
-                  setPin([p.coords.latitude, p.coords.longitude])
+                    <strong>{label}</strong>
+                    <span className="small">{loading ? "…" : `${count} nearby`}</span>
+                  </button>
                 );
-              }}>
-                <Crosshair size={16} />
+              })}
+            </div>
+            {!loading && locations.length === 0 && (
+              <p className="muted small" style={{ marginTop: 12 }}>
+                No places yet. Run <code>python seed.py</code> in the backend folder.
+              </p>
+            )}
+          </section>
+
+          {/* ---------- dietary ---------- */}
+          <section className="card">
+            <div className="card-head">
+              <span className="card-title">Dietary &amp; Atmosphere</span>
+              <button className="link-btn" onClick={() => setTags([])}>
+                Reset
               </button>
             </div>
-
-            <div className="map-legend">
-              <span className="dot" /> <strong>{radius.toFixed(1)} mi radius</strong>
-              <span className="muted"> • ~{walkMinutes} min walk</span>
+            <div className="chips">
+              {TAGS.map((t) => {
+                const active = tags.includes(t);
+                return (
+                  <button
+                    key={t}
+                    className={`chip ${active ? "chip--on" : ""}`}
+                    aria-pressed={active}
+                    onClick={() => toggle(tags, setTags, t)}
+                  >
+                    {active ? <Check size={13} /> : <Plus size={13} />} {t}
+                  </button>
+                );
+              })}
             </div>
-          </div>
+          </section>
 
-          <div className="slider-row">
-            <span className="small label">Radius Distance</span>
-            <span className="miles-pill">{radius.toFixed(1)} Miles</span>
-          </div>
-          <input
-            className="slider"
-            type="range"
-            min="0.5"
-            max="5"
-            step="0.1"
-            value={radius}
-            onChange={(e) => setRadius(parseFloat(e.target.value))}
-            style={{ "--pct": `${radiusPct}%` }}
-            aria-label="Radius distance in miles"
-          />
-          <div className="ticks small">
-            {["0.5 mi", "1.0 mi", "1.5 mi", "2.5 mi", "5.0 mi"].map((t) => (
-              <span key={t}>{t}</span>
-            ))}
-          </div>
-        </section>
-      </div>
+          {/* ---------- walking radius ---------- */}
+          <section className="card">
+            <div className="card-head card-head--top">
+              <div>
+                <span className="card-title">Walking Radius</span>
+              </div>
+              <div className="radius-actions">
+                <button className="link-btn" onClick={() => setEditingPin((v) => !v)}>
+                  {editingPin ? "Done" : "Edit pin"}
+                </button>
+              </div>
+            </div>
 
-      {/* footer*/}
-      <footer className="footer">
-        <div className="cta-bar">
-          <div className="loop">
-            <span className="loop-label">
-              <Footprints size={12} /> Walking Loop
-            </span>
-            <span className="loop-val">
-              <strong>{summary.stops} Stops</strong>{" "}
-              <span className="muted small">• ~{summary.totalMi} mi total</span>
-            </span>
-          </div>
-          <button className="build-btn" disabled={summary.stops === 0} onClick={handleBuild}>
-            <Navigation size={16} /> Build My Crawl
-          </button>
+            <div className="map-box">
+              <MapContainer
+                center={pin}
+                zoom={14}
+                zoomControl={false}
+                zoomSnap={0}
+                attributionControl={false}
+                scrollWheelZoom={false}
+                style={{ height: "100%", width: "100%" }}
+              >
+                <TileLayer url="https://tile.openstreetmap.org/{z}/{x}/{y}.png" />
+                <Circle
+                  center={pin}
+                  radius={radius * MI_TO_M}
+                  pathOptions={{ color: "#3b5ea6", weight: 2, fillColor: "#3b5ea6", fillOpacity: 0.14 }}
+                />
+                {route.stops.map((s, i) => (
+                  <Marker key={s.id} position={[s.lat, s.lng]} icon={stopIcon(i + 1)} />
+                ))}
+                <Marker
+                  position={pin}
+                  icon={pinIcon}
+                  draggable={editingPin}
+                  eventHandlers={{
+                    dragend: (e) => {
+                      const { lat, lng } = e.target.getLatLng();
+                      setPin([lat, lng]);
+                    },
+                  }}
+                />
+                <FitCircle center={pin} radiusM={radius * MI_TO_M} />
+                <MapZoomButtons />
+              </MapContainer>
+
+              <div className="map-ctrl map-ctrl--right">
+                <button
+                  type="button"
+                  aria-label="Use my location"
+                  onClick={() => {
+                    navigator.geolocation?.getCurrentPosition((p) =>
+                      setPin([p.coords.latitude, p.coords.longitude])
+                    );
+                  }}
+                >
+                  <Crosshair size={16} />
+                </button>
+              </div>
+
+              <div className="map-legend">
+                <span className="dot" /> <strong>{radius.toFixed(1)} mi radius</strong>
+                <span className="muted"> • ~{walkMinutes} min walk</span>
+              </div>
+            </div>
+
+            <div className="slider-row">
+              <span className="small label">Radius Distance</span>
+              <span className="miles-pill">{radius.toFixed(1)} Miles</span>
+            </div>
+            <input
+              className="slider"
+              type="range"
+              min="0.5"
+              max="5"
+              step="0.1"
+              value={radius}
+              onChange={(e) => setRadius(parseFloat(e.target.value))}
+              style={{ "--pct": `${radiusPct}%` }}
+              aria-label="Radius distance in miles"
+            />
+            <div className="ticks small">
+              {["0.5 mi", "1.0 mi", "1.5 mi", "2.5 mi", "5.0 mi"].map((t) => (
+                <span key={t}>{t}</span>
+              ))}
+            </div>
+          </section>
+
+          {/* ---------- build crawl (end of page content) ---------- */}
+          <section className="build-section">
+            <div className="loop">
+              <span className="loop-val">
+                <strong>{route.stops.length} Stops</strong>{" "}
+                <span className="muted small">• ~{route.miles.toFixed(1)} mi total</span>
+              </span>
+            </div>
+            <button className="build-btn" disabled={route.stops.length === 0} onClick={handleBuild}>
+              <Navigation size={16} /> Build My List
+            </button>
+          </section>
         </div>
-
-        <nav className="tabbar">
-          <button className="tab">
-            <House size={20} />
-            <span>Home</span>
-          </button>
-          <button className="tab tab--on">
-            <CirclePlus size={22} />
-            <span>Create</span>
-          </button>
-          <button className="tab">
-            <User size={20} />
-            <span>Profile</span>
-          </button>
-        </nav>
-      </footer>
-    </div>
+      </div>
+    </AppShell>
   );
 }

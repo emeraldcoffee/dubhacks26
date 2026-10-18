@@ -1,0 +1,158 @@
+/* Uses tokens + base layout from theme.css */
+
+/* ---------- top bar (logo + menu) ---------- */
+.ws-topbar {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px var(--page-pad, 20px) 8px;
+  background: var(--paper);
+}
+
+.ws-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  font-family: var(--font-head);
+  font-size: 21px;
+  font-weight: 600;
+  letter-spacing: -.025em;
+  color: var(--ink);
+}
+
+.ws-icon-btn {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: var(--paper);
+  border: 1px solid var(--line);
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  color: var(--ink);
+}
+
+/* ---------- page header (same on every screen) ---------- */
+.ws-page-head {
+  background: var(--paper);
+  border-bottom: 1px solid var(--line);
+}
+.ws-page-head-inner {
+  padding: 10px var(--page-pad, 20px) 20px;
+}
+.ws-title-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.ws-page-head h1 {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 600;
+  letter-spacing: -.02em;
+  line-height: 1.15;
+}
+.ws-subtitle {
+  margin: 8px 0 0;
+  font-size: 15px;
+  color: var(--muted);
+}
+
+/* ---------- drawer ---------- */
+.ws-drawer-root {
+  position: absolute;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  justify-content: flex-end;
+}
+.ws-scrim {
+  position: absolute;
+  inset: 0;
+  background: rgba(38, 39, 47, .38);
+  cursor: default;
+  animation: ws-fade .18s ease-out;
+}
+.ws-drawer {
+  position: relative;
+  width: min(82%, 320px);
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  background: var(--paper);
+  border-left: 1px solid var(--line);
+  padding: 10px 0 calc(18px + env(safe-area-inset-bottom));
+  animation: ws-slide .22s cubic-bezier(.2, .8, .2, 1);
+}
+.ws-drawer-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 var(--page-pad, 20px) 14px;
+}
+
+.ws-nav-list { list-style: none; margin: 0; padding: 4px 12px; }
+.ws-nav-item {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 10px;
+  border-radius: var(--r-sm);
+  font-size: 16px;
+  text-align: left;
+  color: var(--ink);
+}
+.ws-nav-item:not(.ws-nav-item--on):active { background: rgba(38, 39, 47, .05); }
+.ws-nav-item--on {
+  background: var(--blue-chip);
+  color: var(--blue);
+  font-weight: 700;
+}
+.ws-soon {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  color: var(--blue);
+  background: var(--blue-chip);
+  padding: 2px 6px;
+  border-radius: var(--r-xs);
+}
+.ws-divider {
+  border: 0;
+  border-top: 1px solid var(--line);
+  margin: 8px var(--page-pad, 20px);
+}
+
+.ws-drawer-foot {
+  margin-top: auto;
+  padding: 0 var(--page-pad, 20px);
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.ws-tagline {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  color: var(--blue);
+}
+.ws-signout {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 15px;
+  color: var(--muted);
+}
+
+@keyframes ws-slide { from { transform: translateX(100%); } to { transform: none; } }
+@keyframes ws-fade  { from { opacity: 0; } to { opacity: 1; } }
+
+@media (prefers-reduced-motion: reduce) {
+  .ws-scrim, .ws-drawer { animation: none; }
+}
