@@ -27,9 +27,28 @@ SYSTEM = (
 )
 
 class DiscoverRequest(SQLModel):
-    idea: str
+    idea: Optional[str] = None
     city: str = "Seattle, WA"
     count: int = 4
+
+    @model_validator(mode="before")
+    @classmethod
+    def accept_other_shapes(cls, data: Any):
+        if not isinstance(data, dict) or data.get("idea"):
+            return data
+        sources = [data]
+        if isinstance(data.get("body"), dict):
+            sources.append(data["body"])          # Veyzl: {"style":..., "body": {...}}
+        for src in sources:
+            for key in ("text", "content", "input", "prompt", "message", "query"):
+                if isinstance(src.get(key), str) and src[key].strip():
+                    return {**data, "idea": src[key]}
+            msgs = src.get("messages")
+            if isinstance(msgs, list) and msgs and isinstance(msgs[-1], dict):
+                text = msgs[-1].get("content")
+                if isinstance(text, str):
+                    return {**data, "idea": text}
+        return data
 
 class PlaceSuggestion(SQLModel):
     name: str
@@ -37,6 +56,7 @@ class PlaceSuggestion(SQLModel):
 
 class Suggestions(SQLModel):
     places: list[PlaceSuggestion]
+    output: str = ""
 
 # _calls: dict[str, list[float]] = defaultdict(list)
 
@@ -81,6 +101,8 @@ def discover(req: DiscoverRequest):
         raise HTTPException(500, "GEMINI_API_KEY or GEMINI_MODEL is not set")
     models = [primary] + ([fallback] if fallback and fallback != primary else [])
 
+    if not req.idea:
+        raise HTTPException(422, "Missing idea")
     idea = req.idea.strip()
     if not 3 <= len(idea) <= 200:
         raise HTTPException(422, "Idea must be 3 to 200 characters")
@@ -96,7 +118,9 @@ def discover(req: DiscoverRequest):
         client = genai.Client(api_key=key)
         result = call_gemini(client, prompt, models)
     except Exception as e:
-        raise HTTPException(502, f"Gemini request failed: {e}")
+        if is_temporary(e):
+            raise HTTPException(502, f"Gemini request failed: {e}")
+        result = Suggestions(places=[])   # blocked, empty or unparseable reply: treat as no results
 
     seen, clean = set(), []
     for p in result.places:
@@ -106,6 +130,10 @@ def discover(req: DiscoverRequest):
             seen.add(k)
             clean.append(PlaceSuggestion(name=name, address=addr))
 
-    out = Suggestions(places=clean[:count])
+    out = Suggestions(
+    places=clean[:count],
+    output="\n".join(f"{p.name} - {p.address}" for p in clean[:count])
+           or "No matching food or drink places found.",
+    )
     _cache[cache_key] = out
     return out
