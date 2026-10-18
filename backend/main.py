@@ -7,6 +7,8 @@ from sqlmodel import SQLModel, Session, create_engine, select
 from models import User, Location, Visit, Dish, QuestStop
 from utils import meters_between
 from ai import router as ai_router
+from fastapi.staticfiles import StaticFiles
+from photos import router as photos_router, UPLOAD_DIR
 from search import router as search_router
 
 engine = create_engine("sqlite:///app.db")
@@ -21,7 +23,6 @@ app = FastAPI(lifespan=lifespan)
 app.add_middleware(CORSMiddleware, allow_origins=["*"],
                    allow_methods=["*"], allow_headers=["*"])
 app.include_router(ai_router)
-app.include_router(search_router)
 
 class UserCreate(SQLModel):
     handle: str
@@ -111,3 +112,7 @@ def quest_progress(user_id: int, quest_id: int):
                   "visited": l.id in done} for l in stops]
         return {"stops": items,
                 "completed": bool(items) and all(i["visited"] for i in items)}
+
+@app.get("/")
+def health_check():
+    return {"status": "ok"}
