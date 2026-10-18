@@ -76,9 +76,9 @@ def create_visit(data: VisitCreate):
         loc = s.get(Location, data.location_id)
         if not loc:
             raise HTTPException(404, "Location not found")
-        if not DEMO_MODE and meters_between(
-                data.lat, data.lng, loc.lat, loc.lng) > 150:
-            raise HTTPException(400, "Too far from this place to check in")
+        # if not DEMO_MODE and meters_between(
+        #         data.lat, data.lng, loc.lat, loc.lng) > 150:
+        #     raise HTTPException(400, "Too far from this place to check in")
         visit = Visit(user_id=data.user_id, location_id=data.location_id)
         s.add(visit); s.commit(); s.refresh(visit)
         return visit

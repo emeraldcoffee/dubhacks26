@@ -71,7 +71,7 @@ export default function CreateCrawl({ user, serverError, onBuild, onNavigate }) 
   const [pin, setPin] = useState(SEATTLE);
   const [editingPin, setEditingPin] = useState(false);
   const [generating, setGenerating] = useState(false);
-  const [rec, setRec] = useState(null); // answer from POST /recommend
+  const [found, setFound] = useState([]); // places from POST /discover: { id, name, address, category, lat, lng, meters_away }
   const [startId, setStartId] = useState(null); // stop to begin the route at
   const [notice, setNotice] = useState("");
 
@@ -114,9 +114,20 @@ export default function CreateCrawl({ user, serverError, onBuild, onNavigate }) 
     [nearby]
   );
 
+  /* search results (from /discover) that fall inside the walking radius; changing the radius re-filters, no new request */
+  const foundNearby = useMemo(() => {
+    const here = { lat: pin[0], lng: pin[1] };
+    return found.filter((p) => metersBetween(here, p) <= radius * MI_TO_M);
+  }, [found, pin, radius]);
+
   /* the route: selected types (and the dish, if you named one), inside the radius, nearest-first */
   const route = useMemo(() => {
     const start = { lat: pin[0], lng: pin[1] };
+    if (found.length > 0) {
+      // search results win (even if the radius leaves none): nearest-first from the pin
+      const ordered = orderStops(start, foundNearby, startId).slice(0, MAX_STOPS);
+      return { stops: ordered, miles: routeMiles(start, ordered) };
+    }
     let pool = nearby.filter(
       (l) => types.includes(typeOfLocation(l)) && (!dish || l.category === dish)
     );
@@ -124,7 +135,7 @@ export default function CreateCrawl({ user, serverError, onBuild, onNavigate }) 
     if (chosen && !pool.some((l) => l.id === chosen.id)) pool = [chosen, ...pool];
     const ordered = orderStops(start, pool, chosen?.id ?? null).slice(0, MAX_STOPS);
     return { stops: ordered, miles: routeMiles(start, ordered) };
-  }, [nearby, types, dish, byId, startId, pin]);
+  }, [nearby, types, dish, byId, startId, pin, found, foundNearby]);
 
   const toggle = (list, setList, value) =>
     setList(list.includes(value) ? list.filter((v) => v !== value) : [...list, value]);
@@ -136,7 +147,7 @@ export default function CreateCrawl({ user, serverError, onBuild, onNavigate }) 
     const found = detectCategory(value, categoryIds);
     if (found !== dish) {
       setDish(found);
-      setRec(null);
+      setFound([]);
       setStartId(null);
       if (found) setTypes([typeOfCategory(found)]);
     }
@@ -144,7 +155,7 @@ export default function CreateCrawl({ user, serverError, onBuild, onNavigate }) 
 
   const clearDish = () => {
     setDish(null);
-    setRec(null);
+    setFound([]);
     setStartId(null);
   };
 
@@ -153,7 +164,7 @@ export default function CreateCrawl({ user, serverError, onBuild, onNavigate }) 
     clearDish();
   };
 
-  /* Smart Generator -> POST /recommend */
+  /* Smart Generator -> POST /discover (Gemini suggests places, the backend geocodes them) */
   const handleGenerate = async () => {
     const text = prompt.trim();
     if (!text || generating) return;
@@ -161,27 +172,21 @@ export default function CreateCrawl({ user, serverError, onBuild, onNavigate }) 
       setNotice(serverError || "Still connecting to the server. Try again in a moment.");
       return;
     }
-    // search the dish you named, or else the first place type you picked
-    const searchCategory =
-      dish ?? locations.find((l) => types.includes(typeOfLocation(l)))?.category;
-    if (!searchCategory) {
-      setNotice("Tell us what you're craving (like matcha) or pick a location type first.");
-      return;
-    }
     setNotice("");
     setGenerating(true);
     try {
-      const note = tags.length ? `${text}. Dietary needs: ${tags.join(", ")}.` : text;
-      const result = await api.recommend({
-        user_id: user.id,
-        category: searchCategory,
+      const withTags = tags.length ? `${text}. Dietary needs: ${tags.join(", ")}.` : text;
+      const idea = (withTags.length <= 200 ? withTags : text).slice(0, 200); // backend limit
+      const result = await api.discover({
+        idea,
+        count: 10,
         lat: pin[0],
         lng: pin[1],
-        minutes: walkMinutes,
-        note,
+        category: dish ?? undefined,
       });
-      setRec(result);
-      setStartId(result.pick.location_id);
+      setFound(result.places);
+      setStartId(result.places[0]?.id ?? null);
+      if (result.places.length === 0) setNotice(result.output);
     } catch (e) {
       setNotice(e.message);
     } finally {
@@ -208,7 +213,7 @@ export default function CreateCrawl({ user, serverError, onBuild, onNavigate }) 
       pin,
       radius,
       miles: route.miles,
-      blurb: rec?.quest_blurb ?? null,
+      blurb: null,
       stops: route.stops.map(({ id, name, category, lat, lng }) => ({
         id,
         name,
@@ -280,32 +285,42 @@ export default function CreateCrawl({ user, serverError, onBuild, onNavigate }) 
               </div>
             )}
 
-            {rec && (
+            {found.length > 0 && (
               <div className="rec">
-                {rec.quest_blurb && <p className="rec-blurb">{rec.quest_blurb}</p>}
-                <ul className="rec-list">
-                  {[rec.pick, ...rec.backups].map((p, i) => {
-                    const loc = byId[p.location_id];
-                    if (!loc) return null;
-                    const on = startId === p.location_id;
-                    return (
-                      <li key={p.location_id}>
-                        <button
-                          className={`rec-item ${on ? "rec-item--on" : ""}`}
-                          aria-pressed={on}
-                          onClick={() => setStartId(p.location_id)}
-                        >
-                          <span className="rec-name">
-                            {loc.name}
-                            {i === 0 && <span className="rec-tag">Top pick</span>}
-                          </span>
-                          <span className="rec-reason">{p.reason}</span>
-                        </button>
-                      </li>
-                    );
-                  })}
-                </ul>
-                <p className="rec-hint small muted">Tap a place to start your route there.</p>
+                {foundNearby.length > 0 ? (
+                  <ul className="rec-list">
+                    {foundNearby.map((p, i) => {
+                      const on = startId === p.id;
+                      const miles = metersBetween({ lat: pin[0], lng: pin[1] }, p) / MI_TO_M;
+                      return (
+                        <li key={p.id}>
+                          <button
+                            className={`rec-item ${on ? "rec-item--on" : ""}`}
+                            aria-pressed={on}
+                            onClick={() => setStartId(p.id)}
+                          >
+                            <span className="rec-name">
+                              {p.name}
+                              {i === 0 && <span className="rec-tag">Top pick</span>}
+                            </span>
+                            <span className="rec-reason">
+                              {p.address} · {miles.toFixed(1)} mi away
+                            </span>
+                          </button>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                ) : (
+                  <p className="rec-hint small muted">
+                    None of the {found.length} suggestions are within {radius.toFixed(1)} mi. Widen the radius to see them.
+                  </p>
+                )}
+                <p className="rec-hint small muted">
+                  {foundNearby.length} of {found.length} suggestions are inside your radius
+                  {foundNearby.length < found.length ? "; widen it to see the rest" : ""}. Suggested by AI, so
+                  double-check before you go. Tap a place to start your route there.
+                </p>
               </div>
             )}
           </section>
